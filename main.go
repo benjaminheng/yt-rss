@@ -24,21 +24,22 @@ import (
 )
 
 var configFile = getConfigFile()
+var cacheDuration = 30 * time.Minute
 
 type FeedEntry struct {
-	ID        string `xml:"id"`
-	YTVideoID string `xml:"videoId"`
-	Published string `xml:"published"`
-	Updated   string `xml:"updated"`
+	ID        string `xml:"id" json:"id"`
+	YTVideoID string `xml:"videoId" json:"yt_video_id"`
+	Published string `xml:"published" json:"published"`
+	Updated   string `xml:"updated" json:"updated"`
 	Author    struct {
-		Name string `xml:"name"`
-	} `xml:"author"`
+		Name string `xml:"name" json:"name"`
+	} `xml:"author" json:"author"`
 	MediaGroup struct {
-		Title   string `xml:"title"`
+		Title   string `xml:"title" json:"title"`
 		Content struct {
-			URL string `xml:"url,attr"`
-		} `xml:"content"`
-	} `xml:"group"`
+			URL string `xml:"url,attr" json:"url"`
+		} `xml:"content" json:"content"`
+	} `xml:"group" json:"media_group"`
 }
 
 func (e FeedEntry) GetPublishedDate() time.Time {
@@ -201,14 +202,18 @@ func runShellCommand(command string, args []string, r io.Reader, w io.Writer) er
 	return cmd.Run()
 }
 
-func getConfigFile() string {
+func getConfigDir() string {
 	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
 	if xdgConfigHome == "" {
 		usr, _ := user.Current()
 		homeDir := usr.HomeDir
 		xdgConfigHome = path.Join(homeDir, ".config/")
 	}
-	fileName := path.Join(xdgConfigHome, "yt-rss/urls")
+	return xdgConfigHome
+}
+
+func getConfigFile() string {
+	fileName := path.Join(getConfigDir(), "yt-rss/urls")
 	// TODO: create dir and file if it does not exist
 	return fileName
 }
@@ -234,17 +239,30 @@ func getFeedURLs() ([]string, error) {
 }
 
 func main() {
-	feedURLs, err := getFeedURLs()
+	feedEntries, isStale, err := getFromCache()
 	if err != nil {
 		log.Fatal(err)
 	}
+	if isStale {
+		feedURLs, err := getFeedURLs()
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	feeds, err := getFeeds(feedURLs)
-	if err != nil {
-		log.Fatal(err)
+		feeds, err := getFeeds(feedURLs)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		feedEntries = getFeedEntries(feeds)
+
+		err = writeToCache(feedEntries)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		fmt.Fprintf(os.Stderr, "Using cached feeds\n")
 	}
-
-	feedEntries := getFeedEntries(feeds)
 
 	err = selectAndPlay(feedEntries)
 	if err != nil {
