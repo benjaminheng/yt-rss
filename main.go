@@ -256,8 +256,8 @@ func buildFZFContent(entries []FeedEntry) (fzfContent string, feedEntryLookup ma
 		}
 		formattedDate := parsedDate.Format("02 Jan")
 		duration := fmt.Sprintf("%02d:%02d", int(v.ExtraMetadata.VideoDuration.Minutes()), int(v.ExtraMetadata.VideoDuration.Seconds())%60)
-		line := fmt.Sprintf("%s | %s | %s | %s", color.YellowString(formattedDate), color.BlueString(duration), color.GreenString(v.Author.Name), v.MediaGroup.Title)
-		rawLine := fmt.Sprintf("%s | %s | %s | %s", formattedDate, duration, v.Author.Name, v.MediaGroup.Title)
+		line := fmt.Sprintf("%s | %s | %30s | %s", color.YellowString(formattedDate), color.BlueString(duration), color.GreenString(v.Author.Name), v.MediaGroup.Title)
+		rawLine := fmt.Sprintf("%s | %s | %30s | %s", formattedDate, duration, v.Author.Name, v.MediaGroup.Title)
 
 		feedEntryLookup[rawLine] = v
 
