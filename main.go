@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/xml"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -18,10 +21,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var feedURLs = []string{
-	"https://www.youtube.com/feeds/videos.xml?channel_id=UCBa659QWEk1AI4Tg--mrJ2A", // tom scott
-	"https://www.youtube.com/feeds/videos.xml?channel_id=UC5jRwTUqG15l-BcqQHbVFtA", // mellow
-}
+var configFile = getConfigFile()
 
 type FeedEntry struct {
 	ID        string `xml:"id"`
@@ -49,7 +49,7 @@ type Feed struct {
 	Entries []FeedEntry `xml:"entry"`
 }
 
-func getFeeds() ([]Feed, error) {
+func getFeeds(feedURLs []string) ([]Feed, error) {
 	var feeds []Feed
 	for _, feedURL := range feedURLs {
 		feed, err := getFeed(feedURL)
@@ -159,8 +159,45 @@ func runShellCommand(command string, args []string, r io.Reader, w io.Writer) er
 	return cmd.Run()
 }
 
+func getConfigFile() string {
+	xdgConfigHome := os.Getenv("XDG_CONFIG_HOME")
+	if xdgConfigHome == "" {
+		usr, _ := user.Current()
+		homeDir := usr.HomeDir
+		xdgConfigHome = path.Join(homeDir, ".config/")
+	}
+	fileName := path.Join(xdgConfigHome, "yt-rss/urls")
+	// TODO: create dir and file if it does not exist
+	return fileName
+}
+
+func getFeedURLs() ([]string, error) {
+	f, err := os.Open(configFile)
+	if err != nil {
+		return nil, err
+	}
+
+	var feedURLs []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "#") {
+			feedURLs = append(feedURLs, line)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return feedURLs, nil
+}
+
 func main() {
-	feeds, err := getFeeds()
+	feedURLs, err := getFeedURLs()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	feeds, err := getFeeds(feedURLs)
 	if err != nil {
 		log.Fatal(err)
 	}
