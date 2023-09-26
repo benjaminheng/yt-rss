@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/pkg/errors"
 )
 
@@ -74,9 +75,10 @@ func buildFZFContent(entries []FeedEntry) (fzfContent string, feedEntryLookup ma
 			return "", nil, err
 		}
 		formattedDate := parsedDate.Format("02 Jan")
-		line := fmt.Sprintf("[%s] [%s] %s", formattedDate, v.Author.Name, v.MediaGroup.Title)
+		line := fmt.Sprintf("[%s] [%s] %s", color.YellowString(formattedDate), color.GreenString(v.Author.Name), v.MediaGroup.Title)
+		rawLine := fmt.Sprintf("[%s] [%s] %s", formattedDate, v.Author.Name, v.MediaGroup.Title)
 
-		feedEntryLookup[line] = v
+		feedEntryLookup[rawLine] = v
 
 		fzfContent += line
 		if i < len(entries)-1 {
@@ -96,7 +98,7 @@ func selectAndPlay(entries []FeedEntry) error {
 	// Select in fzf
 	r := strings.NewReader(fzfContent)
 	b := &bytes.Buffer{}
-	err = runShellCommand("fzf", nil, r, b)
+	err = runShellCommand("fzf", []string{"--ansi"}, r, b)
 	if err != nil {
 		return err
 	}
