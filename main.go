@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,8 +18,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-var feeds = []string{
-	"https://www.youtube.com/feeds/videos.xml?channel_id=UCBa659QWEk1AI4Tg--mrJ2A",
+var feedURLs = []string{
+	"https://www.youtube.com/feeds/videos.xml?channel_id=UCBa659QWEk1AI4Tg--mrJ2A", // tom scott
+	"https://www.youtube.com/feeds/videos.xml?channel_id=UC5jRwTUqG15l-BcqQHbVFtA", // mellow
 }
 
 type FeedEntry struct {
@@ -37,9 +39,26 @@ type FeedEntry struct {
 	} `xml:"group"`
 }
 
+func (e FeedEntry) GetPublishedDate() time.Time {
+	t, _ := time.Parse(time.RFC3339, e.Published)
+	return t
+}
+
 type Feed struct {
 	XMLName xml.Name    `xml:"feed"`
 	Entries []FeedEntry `xml:"entry"`
+}
+
+func getFeeds() ([]Feed, error) {
+	var feeds []Feed
+	for _, feedURL := range feedURLs {
+		feed, err := getFeed(feedURL)
+		if err != nil {
+			return nil, err
+		}
+		feeds = append(feeds, *feed)
+	}
+	return feeds, nil
 }
 
 func getFeed(feedURL string) (*Feed, error) {
@@ -61,6 +80,18 @@ func getFeed(feedURL string) (*Feed, error) {
 	}
 
 	return feed, nil
+}
+
+func getFeedEntries(feeds []Feed) []FeedEntry {
+	var entries []FeedEntry
+	for _, v := range feeds {
+		entries = append(entries, v.Entries...)
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].GetPublishedDate().After(entries[j].GetPublishedDate())
+	})
+	return entries
 }
 
 // buildFZFContent builds the content to show in a fzf instance. This function
@@ -129,11 +160,14 @@ func runShellCommand(command string, args []string, r io.Reader, w io.Writer) er
 }
 
 func main() {
-	feed, err := getFeed(feeds[0])
+	feeds, err := getFeeds()
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = selectAndPlay(feed.Entries)
+
+	feedEntries := getFeedEntries(feeds)
+
+	err = selectAndPlay(feedEntries)
 	if err != nil {
 		log.Fatal(err)
 	}
