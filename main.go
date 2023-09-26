@@ -20,6 +20,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/pkg/errors"
+	"github.com/schollz/progressbar/v3"
 )
 
 var configFile = getConfigFile()
@@ -54,15 +55,22 @@ func getFeeds(feedURLs []string) ([]Feed, error) {
 	var feeds []Feed
 	concurrency := 10
 
-	worker := func(wg *sync.WaitGroup, ch <-chan string, errCh chan<- error) {
+	progressBar := progressbar.Default(
+		int64(len(feedURLs)),
+		"Fetching feeds",
+	)
+
+	worker := func(wg *sync.WaitGroup, ch <-chan string, errCh chan<- error, progressBar *progressbar.ProgressBar) {
 		defer wg.Done()
 		for feedURL := range ch {
 			feed, err := getFeed(feedURL)
 			if err != nil {
+				progressBar.Add(1)
 				errCh <- err
 				return
 			}
 			feeds = append(feeds, *feed)
+			progressBar.Add(1)
 		}
 	}
 
@@ -73,7 +81,7 @@ func getFeeds(feedURLs []string) ([]Feed, error) {
 	// start workers
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
-		go worker(wg, ch, errCh)
+		go worker(wg, ch, errCh, progressBar)
 	}
 
 	// Queue feed URLs
