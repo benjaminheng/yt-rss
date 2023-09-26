@@ -15,6 +15,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -51,13 +52,46 @@ type Feed struct {
 
 func getFeeds(feedURLs []string) ([]Feed, error) {
 	var feeds []Feed
-	for _, feedURL := range feedURLs {
-		feed, err := getFeed(feedURL)
-		if err != nil {
-			return nil, err
+	concurrency := 10
+
+	worker := func(wg *sync.WaitGroup, ch <-chan string, errCh chan<- error) {
+		defer wg.Done()
+		for feedURL := range ch {
+			feed, err := getFeed(feedURL)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			feeds = append(feeds, *feed)
 		}
-		feeds = append(feeds, *feed)
 	}
+
+	ch := make(chan string, concurrency)
+	errCh := make(chan error, len(feedURLs))
+	wg := &sync.WaitGroup{}
+
+	// start workers
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go worker(wg, ch, errCh)
+	}
+
+	// Queue feed URLs
+	for _, feedURL := range feedURLs {
+		ch <- feedURL
+	}
+	close(ch)
+
+	// Wait for workers to finish
+	wg.Wait()
+
+	// Print errors, if any
+	if len(errCh) > 0 {
+		for err := range errCh {
+			fmt.Fprintln(os.Stderr, err)
+		}
+	}
+
 	return feeds, nil
 }
 
