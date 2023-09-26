@@ -40,6 +40,12 @@ type FeedEntry struct {
 			URL string `xml:"url,attr" json:"url"`
 		} `xml:"content" json:"content"`
 	} `xml:"group" json:"media_group"`
+
+	// ExtraMetadata contains metadata not part of YouTube's RSS feed.
+	ExtraMetadata struct {
+		VideoDuration   time.Duration `json:"video_duration"`
+		ShouldFilterOut bool          `json:"should_filter_out"`
+	} `json:"extra_metadata"`
 }
 
 func (e FeedEntry) GetPublishedDate() time.Time {
@@ -125,16 +131,113 @@ func getFeed(feedURL string) (*Feed, error) {
 	return feed, nil
 }
 
-func getFeedEntries(feeds []Feed) []FeedEntry {
+func getFeedEntries(feeds []Feed, cachedFeedEntries []FeedEntry) []FeedEntry {
+	// Create a lookup for entries we've seen before, so we can avoid
+	// postprocessing them again later.
+	cachedEntryLookup := make(map[string]FeedEntry)
+	for _, v := range cachedFeedEntries {
+		cachedEntryLookup[v.ID] = v
+	}
+
 	var entries []FeedEntry
 	for _, v := range feeds {
-		entries = append(entries, v.Entries...)
+		for _, entry := range v.Entries {
+			// Prioritize cached entries, because they contain
+			// metadata that is expensive to add. Avoid fetching
+			// metadata again.
+			if cachedEntry, ok := cachedEntryLookup[entry.ID]; ok {
+				entries = append(entries, cachedEntry)
+			} else {
+				entries = append(entries, entry)
+			}
+		}
 	}
+
+	entries = bulkAddMetadata(entries)
 
 	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].GetPublishedDate().After(entries[j].GetPublishedDate())
 	})
+
 	return entries
+}
+
+func bulkAddMetadata(entries []FeedEntry) []FeedEntry {
+	// for _, v := range entries {
+	// 	fmt.Printf("v.ID = %+v\n", v.ID)
+	// 	fmt.Printf("v.MediaGroup.Title = %+v\n", v.MediaGroup.Title)
+	// 	fmt.Printf("v.ExtraMetadata.VideoDuration = %+v\n", v.ExtraMetadata.VideoDuration)
+	// }
+	concurrency := 10
+	progressBar := progressbar.Default(
+		int64(len(entries)),
+		"Fetching video durations",
+	)
+
+	// Worker to add metadata to each entry.
+	// Note that the slice index is being passed instead of a pointer to
+	// each struct in the slice. Would prefer to do the latter, but I can't
+	// get it to work. This method is less ideal, but it works for now.
+	worker := func(wg *sync.WaitGroup, ch <-chan int, errCh chan<- error, progressBar *progressbar.ProgressBar) {
+		defer wg.Done()
+		for i := range ch {
+			addMetadata(&entries[i])
+			progressBar.Add(1)
+		}
+	}
+
+	ch := make(chan int, concurrency)
+	errCh := make(chan error, len(entries))
+	wg := &sync.WaitGroup{}
+
+	// Start workers
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go worker(wg, ch, errCh, progressBar)
+	}
+
+	// Queue feed entries
+	for i := range entries {
+		i := i
+		ch <- i
+	}
+	close(ch)
+
+	// Wait for workers to finish
+	wg.Wait()
+
+	// Print errors, if any
+	if len(errCh) > 0 {
+		for err := range errCh {
+			fmt.Fprintln(os.Stderr, err)
+		}
+	}
+	return entries
+}
+
+func addMetadata(entry *FeedEntry) {
+	// Add video duration
+	if entry.ExtraMetadata.VideoDuration == 0 {
+		duration, err := getVideoDuration(entry.MediaGroup.Content.URL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to get video duration for %s\n", entry.MediaGroup.Content.URL)
+			return
+		}
+		entry.ExtraMetadata.VideoDuration = duration
+	}
+
+	// Set ShouldFilterOut flag
+	entry.ExtraMetadata.ShouldFilterOut = shouldFilterOutEntry(entry)
+	return
+}
+
+func shouldFilterOutEntry(entry *FeedEntry) bool {
+	// Filter out short videos
+	durationThreshold := 1 * time.Minute
+	if entry.ExtraMetadata.VideoDuration > 0 && entry.ExtraMetadata.VideoDuration < durationThreshold {
+		return true
+	}
+	return false
 }
 
 // buildFZFContent builds the content to show in a fzf instance. This function
@@ -144,6 +247,9 @@ func getFeedEntries(feeds []Feed) []FeedEntry {
 func buildFZFContent(entries []FeedEntry) (fzfContent string, feedEntryLookup map[string]FeedEntry, err error) {
 	feedEntryLookup = make(map[string]FeedEntry)
 	for i, v := range entries {
+		if v.ExtraMetadata.ShouldFilterOut {
+			continue
+		}
 		parsedDate, err := time.Parse(time.RFC3339, v.Published)
 		if err != nil {
 			return "", nil, err
@@ -254,7 +360,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		feedEntries = getFeedEntries(feeds)
+		feedEntries = getFeedEntries(feeds, feedEntries)
 
 		err = writeToCache(feedEntries)
 		if err != nil {
@@ -268,4 +374,5 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 }

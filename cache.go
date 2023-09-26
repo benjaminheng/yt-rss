@@ -9,8 +9,8 @@ import (
 )
 
 type Cache struct {
-	LastQueryTimestamp time.Time
-	FeedEntries        []FeedEntry
+	LastQueryTimestamp time.Time   `json:"last_query_timestamp"`
+	FeedEntries        []FeedEntry `json:"feed_entries"`
 }
 
 func getCacheFile() string {
@@ -44,7 +44,7 @@ func getFromCache() (entries []FeedEntry, isStale bool, err error) {
 
 	// Check if cache is stale
 	if time.Now().Sub(cache.LastQueryTimestamp) > cacheDuration {
-		return nil, true, nil
+		return cache.FeedEntries, true, nil
 	}
 
 	// Cache is still valid
