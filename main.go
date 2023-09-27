@@ -240,11 +240,23 @@ func shouldFilterOutEntry(entry *FeedEntry) bool {
 	return false
 }
 
+func findLongestAuthorNameLength(entries []FeedEntry) int {
+	var maxLength int
+	for _, v := range entries {
+		if len(v.Author.Name) > maxLength {
+			maxLength = len(v.Author.Name)
+		}
+	}
+	return maxLength
+}
+
 // buildFZFContent builds the content to show in a fzf instance. This function
 // also returns a map, mapping each line in the fzf content to the
 // corresponding feed entry. The map allows the feed entry to be looked up
 // based on the selected line.
 func buildFZFContent(entries []FeedEntry) (fzfContent string, feedEntryLookup map[string]FeedEntry, err error) {
+	maxAuthorNameLength := findLongestAuthorNameLength(entries)
+	authorNameFormatString := fmt.Sprintf("%%-%ds", maxAuthorNameLength) // e.g. "%-16s"
 	feedEntryLookup = make(map[string]FeedEntry)
 	for i, v := range entries {
 		if v.ExtraMetadata.ShouldFilterOut {
@@ -256,8 +268,9 @@ func buildFZFContent(entries []FeedEntry) (fzfContent string, feedEntryLookup ma
 		}
 		formattedDate := parsedDate.Format("02 Jan")
 		duration := fmt.Sprintf("%02d:%02d", int(v.ExtraMetadata.VideoDuration.Minutes()), int(v.ExtraMetadata.VideoDuration.Seconds())%60)
-		line := fmt.Sprintf("%s | %s | %30s | %s", color.YellowString(formattedDate), color.BlueString(duration), color.GreenString(v.Author.Name), v.MediaGroup.Title)
-		rawLine := fmt.Sprintf("%s | %s | %30s | %s", formattedDate, duration, v.Author.Name, v.MediaGroup.Title)
+		authorName := fmt.Sprintf(authorNameFormatString, v.Author.Name)
+		line := fmt.Sprintf("%s | %s | %s | %s", color.YellowString(formattedDate), color.BlueString(duration), color.GreenString(authorName), v.MediaGroup.Title)
+		rawLine := fmt.Sprintf("%s | %s | %s | %s", formattedDate, duration, authorName, v.MediaGroup.Title)
 
 		feedEntryLookup[rawLine] = v
 
