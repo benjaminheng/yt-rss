@@ -28,8 +28,13 @@ import (
 )
 
 var configFile = getConfigFile()
-var cacheDuration = 30 * time.Minute
 var hashtagRegex = regexp.MustCompile(`\B(\#[\w_-]+\b)`) // non-word boundary, hashtag, word boundary
+
+// Configuration
+var (
+	cacheDuration           = 30 * time.Minute
+	enableAuthorNamePadding = true
+)
 
 type FeedEntry struct {
 	ID        string `xml:"id" json:"id"`
@@ -275,8 +280,11 @@ func findLongestAuthorNameLength(entries []FeedEntry) int {
 // corresponding feed entry. The map allows the feed entry to be looked up
 // based on the selected line.
 func buildFZFContent(entries []FeedEntry) (fzfContent string, feedEntryLookup map[string]FeedEntry, err error) {
-	maxAuthorNameLength := findLongestAuthorNameLength(entries)
-	authorNameFormatString := fmt.Sprintf("%%-%ds", maxAuthorNameLength) // e.g. "%-16s"
+	authorNameFormatString := "%s"
+	if enableAuthorNamePadding {
+		maxAuthorNameLength := findLongestAuthorNameLength(entries)
+		authorNameFormatString = fmt.Sprintf("%%-%ds", maxAuthorNameLength) // e.g. "%-16s"
+	}
 	feedEntryLookup = make(map[string]FeedEntry)
 	for i, v := range entries {
 		if v.ExtraMetadata.ShouldFilterOut {
