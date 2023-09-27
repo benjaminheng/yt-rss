@@ -150,25 +150,34 @@ func getFeedEntries(feeds []Feed, cachedFeedEntries []FeedEntry) []FeedEntry {
 		cachedEntryLookup[v.ID] = v
 	}
 
+	// Concat cached and new feed entries. Prioritize cached entries if
+	// there are duplicates, because the cached entries have additional
+	// metadata fetched already. Fetching metadata can be expensive, so we
+	// should avoid doing it where unnecessary.
 	var entries []FeedEntry
-	for _, v := range feeds {
-		for _, entry := range v.Entries {
-			// Prioritize cached entries, because they contain
-			// metadata that is expensive to add. Avoid fetching
-			// metadata again.
-			if cachedEntry, ok := cachedEntryLookup[entry.ID]; ok {
-				entries = append(entries, cachedEntry)
-			} else {
-				entries = append(entries, entry)
+	seen := make(map[string]bool)
+	for _, v := range cachedFeedEntries {
+		if _, ok := seen[v.ID]; !ok {
+			// Append if entry has not been added before
+			seen[v.ID] = true
+			entries = append(entries, v)
+		}
+	}
+	for _, feed := range feeds {
+		for _, v := range feed.Entries {
+			if _, ok := seen[v.ID]; !ok {
+				// Append if entry has not been added before
+				seen[v.ID] = true
+				entries = append(entries, v)
 			}
 		}
 	}
 
-	entries = bulkAddMetadata(entries)
-
 	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].GetPublishedDate().After(entries[j].GetPublishedDate())
 	})
+
+	entries = bulkAddMetadata(entries)
 
 	return entries
 }
