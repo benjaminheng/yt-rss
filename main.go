@@ -33,7 +33,8 @@ var hashtagRegex = regexp.MustCompile(`\B(\#[\w_-]+\b)`) // non-word boundary, h
 // Configuration
 var (
 	cacheDuration           = 30 * time.Minute
-	enableAuthorNamePadding = true
+	shortsThreshold         = 80 * time.Second // Duration to consider a video a YouTube Short
+	enableAuthorNamePadding = true             // Enables padding of author names to align the FZF output
 )
 
 type FeedEntry struct {
@@ -54,7 +55,6 @@ type FeedEntry struct {
 	// ExtraMetadata contains metadata not part of YouTube's RSS feed.
 	ExtraMetadata struct {
 		VideoDuration   time.Duration `json:"video_duration"`
-		ShouldFilterOut bool          `json:"should_filter_out"`
 		NormalizedTitle string        `json:"normalized_title"`
 	} `json:"extra_metadata"`
 }
@@ -251,15 +251,12 @@ func addMetadata(entry *FeedEntry) {
 		entry.ExtraMetadata.NormalizedTitle = normalizeTitle(entry.MediaGroup.Title)
 	}
 
-	// Set ShouldFilterOut flag
-	entry.ExtraMetadata.ShouldFilterOut = shouldFilterOutEntry(entry)
 	return
 }
 
-func shouldFilterOutEntry(entry *FeedEntry) bool {
+func shouldFilterOutEntry(entry FeedEntry) bool {
 	// Filter out short videos
-	durationThreshold := 1 * time.Minute
-	if entry.ExtraMetadata.VideoDuration > 0 && entry.ExtraMetadata.VideoDuration < durationThreshold {
+	if entry.ExtraMetadata.VideoDuration > 0 && entry.ExtraMetadata.VideoDuration < shortsThreshold {
 		return true
 	}
 	return false
@@ -287,7 +284,7 @@ func buildFZFContent(entries []FeedEntry) (fzfContent string, feedEntryLookup ma
 	}
 	feedEntryLookup = make(map[string]FeedEntry)
 	for i, v := range entries {
-		if v.ExtraMetadata.ShouldFilterOut {
+		if shouldFilterOutEntry(v) {
 			continue
 		}
 		parsedDate, err := time.Parse(time.RFC3339, v.Published)
