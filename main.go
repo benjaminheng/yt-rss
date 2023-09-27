@@ -329,6 +329,16 @@ func selectAndPlay(entries []FeedEntry) error {
 	b := &bytes.Buffer{}
 	err = runShellCommand("fzf", []string{"--ansi", "--tiebreak=index"}, r, b)
 	if err != nil {
+		if e, ok := err.(*exec.ExitError); ok {
+			// Exit code 2 indicates an unexpected error. Other
+			// exit codes are either due to no matches, or
+			// user-invoked ctrl-C; both of which can be gracefully
+			// ignored.
+			if e.ExitCode() == 2 {
+				return err
+			}
+			return nil
+		}
 		return err
 	}
 
