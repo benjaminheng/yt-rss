@@ -279,7 +279,7 @@ func selectAndPlay(entries []FeedEntry) error {
 	// Select in fzf
 	r := strings.NewReader(fzfContent)
 	b := &bytes.Buffer{}
-	err = runShellCommand("fzf", []string{"--ansi"}, r, b)
+	err = runShellCommand("fzf", []string{"--ansi", "--tiebreak=index"}, r, b)
 	if err != nil {
 		return err
 	}
