@@ -13,18 +13,23 @@ import (
 	"os/exec"
 	"os/user"
 	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/fatih/color"
 	"github.com/pkg/errors"
 	"github.com/schollz/progressbar/v3"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 var configFile = getConfigFile()
 var cacheDuration = 30 * time.Minute
+var hashtagRegex = regexp.MustCompile(`\B(\#[\w_-]+\b)`) // non-word boundary, hashtag, word boundary
 
 type FeedEntry struct {
 	ID        string `xml:"id" json:"id"`
@@ -45,6 +50,7 @@ type FeedEntry struct {
 	ExtraMetadata struct {
 		VideoDuration   time.Duration `json:"video_duration"`
 		ShouldFilterOut bool          `json:"should_filter_out"`
+		NormalizedTitle string        `json:"normalized_title"`
 	} `json:"extra_metadata"`
 }
 
@@ -163,15 +169,10 @@ func getFeedEntries(feeds []Feed, cachedFeedEntries []FeedEntry) []FeedEntry {
 }
 
 func bulkAddMetadata(entries []FeedEntry) []FeedEntry {
-	// for _, v := range entries {
-	// 	fmt.Printf("v.ID = %+v\n", v.ID)
-	// 	fmt.Printf("v.MediaGroup.Title = %+v\n", v.MediaGroup.Title)
-	// 	fmt.Printf("v.ExtraMetadata.VideoDuration = %+v\n", v.ExtraMetadata.VideoDuration)
-	// }
 	concurrency := 10
 	progressBar := progressbar.Default(
 		int64(len(entries)),
-		"Fetching video durations",
+		"Adding metadata",
 	)
 
 	// Worker to add metadata to each entry.
@@ -215,6 +216,20 @@ func bulkAddMetadata(entries []FeedEntry) []FeedEntry {
 	return entries
 }
 
+func normalizeTitle(title string) string {
+	// Sentence case
+	caser := cases.Lower(language.English)
+	title = caser.String(title)
+	r := []rune(title)
+	r[0] = unicode.ToUpper(r[0])
+	title = string(r)
+
+	// Remove hashtags
+	title = hashtagRegex.ReplaceAllString(title, "")
+
+	return title
+}
+
 func addMetadata(entry *FeedEntry) {
 	// Add video duration
 	if entry.ExtraMetadata.VideoDuration == 0 {
@@ -224,6 +239,11 @@ func addMetadata(entry *FeedEntry) {
 			return
 		}
 		entry.ExtraMetadata.VideoDuration = duration
+	}
+
+	// Normalize titles
+	if entry.ExtraMetadata.NormalizedTitle == "" {
+		entry.ExtraMetadata.NormalizedTitle = normalizeTitle(entry.MediaGroup.Title)
 	}
 
 	// Set ShouldFilterOut flag
@@ -269,8 +289,9 @@ func buildFZFContent(entries []FeedEntry) (fzfContent string, feedEntryLookup ma
 		formattedDate := parsedDate.Format("02 Jan")
 		duration := fmt.Sprintf("%02d:%02d", int(v.ExtraMetadata.VideoDuration.Minutes()), int(v.ExtraMetadata.VideoDuration.Seconds())%60)
 		authorName := fmt.Sprintf(authorNameFormatString, v.Author.Name)
-		line := fmt.Sprintf("%s | %s | %s | %s", color.YellowString(formattedDate), color.BlueString(duration), color.GreenString(authorName), v.MediaGroup.Title)
-		rawLine := fmt.Sprintf("%s | %s | %s | %s", formattedDate, duration, authorName, v.MediaGroup.Title)
+		title := v.ExtraMetadata.NormalizedTitle
+		line := fmt.Sprintf("%s | %s | %s | %s", color.YellowString(formattedDate), color.BlueString(duration), color.GreenString(authorName), title)
+		rawLine := fmt.Sprintf("%s | %s | %s | %s", formattedDate, duration, authorName, title)
 
 		feedEntryLookup[rawLine] = v
 

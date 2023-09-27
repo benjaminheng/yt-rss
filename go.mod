@@ -6,6 +6,7 @@ require (
 	github.com/fatih/color v1.15.0
 	github.com/pkg/errors v0.9.1
 	github.com/schollz/progressbar/v3 v3.13.1
+	golang.org/x/text v0.13.0
 )
 
 require (
