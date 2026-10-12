@@ -33,7 +33,7 @@ var hashtagRegex = regexp.MustCompile(`\B(\#[\w_-]+\b)`) // non-word boundary, h
 // Configuration
 var (
 	cacheDuration           = 30 * time.Minute
-	shortsThreshold         = 120 * time.Second // Duration to consider a video a YouTube Short
+	shortsThreshold         = 190 * time.Second // Duration to consider a video a YouTube Short
 	enableAuthorNamePadding = true              // Enables padding of author names to align the FZF output
 )
 
